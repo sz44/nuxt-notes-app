@@ -324,7 +324,7 @@ function formatDate(timestamp: number) {
             {{ note.body }}
           </div>
           <div v-if="search && note.highlightedBody" class="highlight" v-html="note.highlightedBody" />
-          <footer>
+          <footer v-if="expandedNotes.has(note.id)">
             <span>Updated {{ formatDate(note.updatedAt) }}</span>
             <div class="note-row-actions">
               <div class="note-menu">
