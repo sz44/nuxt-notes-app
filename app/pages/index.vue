@@ -17,6 +17,8 @@ const user = ref<User | null>(null)
 const notes = ref<Note[]>([])
 const search = ref('')
 const draft = ref('')
+const composerExpanded = ref(false)
+const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const openMenu = ref(false)
 const loading = ref(true)
 const saving = ref(false)
@@ -68,6 +70,7 @@ async function createNote() {
       body: { body }
     })
     draft.value = ''
+    composerExpanded.value = false
     search.value = ''
     await loadNotes()
   } catch {
@@ -75,6 +78,12 @@ async function createNote() {
   } finally {
     saving.value = false
   }
+}
+
+async function expandComposer() {
+  composerExpanded.value = true
+  await nextTick()
+  composerTextarea.value?.focus()
 }
 
 function queueUpdate(note: Note) {
@@ -171,15 +180,26 @@ function formatDate(timestamp: number) {
     </header>
 
     <section v-if="!loading" class="notes-shell">
-      <form class="composer" @submit.prevent="createNote">
+      <form class="composer" :class="{ 'is-expanded': composerExpanded }" @submit.prevent="createNote">
+        <input
+          v-if="!composerExpanded"
+          v-model="draft"
+          type="text"
+          placeholder="Take a note..."
+          autocomplete="off"
+          @focus="expandComposer"
+          @click="expandComposer"
+        >
         <textarea
+          v-else
+          ref="composerTextarea"
           v-model="draft"
           placeholder="Take a note..."
           rows="3"
           @keydown.meta.enter.prevent="createNote"
           @keydown.ctrl.enter.prevent="createNote"
         />
-        <div class="composer-actions">
+        <div v-if="composerExpanded" class="composer-actions">
           <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
           <button type="submit" :disabled="!draft.trim() || saving">
             {{ saving ? 'Saving' : 'Done' }}

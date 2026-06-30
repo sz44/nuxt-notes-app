@@ -179,14 +179,25 @@ button {
   overflow: hidden;
 }
 
+.composer input,
 .composer textarea,
 .note-row textarea {
   width: 100%;
-  resize: vertical;
   border: 0;
   outline: 0;
   background: transparent;
   color: #202124;
+}
+
+.composer input {
+  height: 46px;
+  padding: 0 18px;
+  font-size: 16px;
+}
+
+.composer textarea,
+.note-row textarea {
+  resize: vertical;
   line-height: 1.5;
 }
 
