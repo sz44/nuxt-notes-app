@@ -28,6 +28,7 @@ const saving = ref(false)
 const errorMessage = ref('')
 const editing = reactive<Record<string, string>>({})
 const editTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let suppressNextSearchLoad = false
 const requestFetch = useRequestFetch()
 
 const meResponse = await useFetch<{ user: User }>('/api/me')
@@ -41,6 +42,11 @@ if (meResponse.error.value) {
 loading.value = false
 
 watch(search, () => {
+  if (suppressNextSearchLoad) {
+    suppressNextSearchLoad = false
+    return
+  }
+
   loadNotes()
 })
 
@@ -86,17 +92,42 @@ async function createNote() {
 
   saving.value = true
   errorMessage.value = ''
+  const optimisticNote: Note = {
+    id: `optimistic-${Date.now()}`,
+    body,
+    createdAt: Math.floor(Date.now() / 1000),
+    updatedAt: Math.floor(Date.now() / 1000),
+    highlightedBody: null,
+    searchRelevance: null
+  }
+
+  if (search.value) {
+    suppressNextSearchLoad = true
+    search.value = ''
+  }
+
+  draft.value = ''
+  composerExpanded.value = false
+  notes.value = [optimisticNote, ...notes.value]
+  editing[optimisticNote.id] = optimisticNote.body
 
   try {
-    await $fetch('/api/notes', {
+    const response = await $fetch<{ note: Note }>('/api/notes', {
       method: 'POST',
       body: { body }
     })
-    draft.value = ''
-    composerExpanded.value = false
-    search.value = ''
-    await loadNotes()
+
+    const optimisticIndex = notes.value.findIndex((note) => note.id === optimisticNote.id)
+    if (optimisticIndex !== -1) {
+      notes.value.splice(optimisticIndex, 1, response.note)
+      delete editing[optimisticNote.id]
+      editing[response.note.id] = response.note.body
+    }
   } catch {
+    notes.value = notes.value.filter((note) => note.id !== optimisticNote.id)
+    delete editing[optimisticNote.id]
+    draft.value = body
+    composerExpanded.value = true
     errorMessage.value = 'Could not save this note.'
   } finally {
     saving.value = false
@@ -197,12 +228,24 @@ async function deleteNote(note: Note) {
     editTimers.delete(note.id)
   }
 
+  const deletedIndex = notes.value.findIndex((item) => item.id === note.id)
+  const deletedEditing = editing[note.id]
   openNoteMenu.value = null
   const nextExpandedNotes = new Set(expandedNotes.value)
   nextExpandedNotes.delete(note.id)
   expandedNotes.value = nextExpandedNotes
-  await $fetch(`/api/notes/${note.id}`, { method: 'DELETE' })
   notes.value = notes.value.filter((item) => item.id !== note.id)
+  delete editing[note.id]
+
+  try {
+    await $fetch(`/api/notes/${note.id}`, { method: 'DELETE' })
+  } catch {
+    if (deletedIndex !== -1) {
+      notes.value.splice(deletedIndex, 0, note)
+      editing[note.id] = deletedEditing || note.body
+    }
+    errorMessage.value = 'Could not delete this note.'
+  }
 }
 
 async function signOut() {
