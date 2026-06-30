@@ -191,7 +191,17 @@ function formatDate(timestamp: number) {
       <div class="topbar-inner">
         <NuxtLink class="logo" to="/">Notes</NuxtLink>
         <label class="search-wrap" aria-label="Search notes">
-          <span class="search-icon">⌕</span>
+          <span class="search-icon">
+
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 32 32">
+              <path d="M0 0h32v32H0z" fill="none" />
+              <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                <circle cx="14" cy="14" r="12" />
+                <path d="m23 23l7 7" />
+              </g>
+            </svg>
+          </span>
+
           <input v-model="search" type="search" placeholder="Search" autocomplete="off">
         </label>
         <div class="topbar-actions">
