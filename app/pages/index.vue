@@ -21,7 +21,7 @@ const composerExpanded = ref(false)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const openMenu = ref(false)
 const openNoteMenu = ref<string | null>(null)
-const theme = ref<'light' | 'dark'>('light')
+const theme = ref<'light' | 'dark'>('dark')
 const loading = ref(true)
 const saving = ref(false)
 const errorMessage = ref('')
@@ -47,9 +47,8 @@ onMounted(() => {
   const savedTheme = window.localStorage.getItem('notes-theme')
   if (savedTheme === 'light' || savedTheme === 'dark') {
     theme.value = savedTheme
-  } else {
-    applyThemeClass(theme.value)
   }
+  applyThemeClass(theme.value)
 })
 
 watch(theme, (nextTheme) => {
@@ -173,6 +172,7 @@ function toggleTheme() {
 
 function applyThemeClass(nextTheme: 'light' | 'dark') {
   document.documentElement.classList.toggle('theme-dark', nextTheme === 'dark')
+  document.documentElement.classList.toggle('theme-light', nextTheme === 'light')
 }
 
 function formatDate(timestamp: number) {
