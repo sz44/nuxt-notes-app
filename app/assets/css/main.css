@@ -155,8 +155,7 @@ button {
 }
 
 .account-menu button,
-.composer-actions button,
-.note-row footer button {
+.composer-actions button {
   min-height: 36px;
   border: 0;
   border-radius: 6px;
@@ -263,6 +262,60 @@ mark {
   padding: 10px 12px 10px 16px;
   color: #5f6368;
   font-size: 13px;
+}
+
+.note-menu {
+  position: relative;
+}
+
+.note-menu-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #5f6368;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.note-menu-button:hover,
+.note-menu-button[aria-expanded="true"] {
+  background: #edf2f7;
+  color: #202124;
+}
+
+.note-menu-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 2;
+  min-width: 220px;
+  border: 1px solid #dfe4ea;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(60, 64, 67, 0.18);
+  padding: 14px 0;
+}
+
+.note-menu-panel button {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #3c4043;
+  padding: 0 34px;
+  text-align: left;
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.note-menu-panel button:hover {
+  background: #edf2f7;
+  color: #202124;
 }
 
 .empty-state {

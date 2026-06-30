@@ -20,6 +20,7 @@ const draft = ref('')
 const composerExpanded = ref(false)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const openMenu = ref(false)
+const openNoteMenu = ref<string | null>(null)
 const loading = ref(true)
 const saving = ref(false)
 const errorMessage = ref('')
@@ -139,6 +140,7 @@ async function deleteNote(note: Note) {
     editTimers.delete(note.id)
   }
 
+  openNoteMenu.value = null
   await $fetch(`/api/notes/${note.id}`, { method: 'DELETE' })
   notes.value = notes.value.filter((item) => item.id !== note.id)
 }
@@ -219,7 +221,21 @@ function formatDate(timestamp: number) {
           <div v-if="search && note.highlightedBody" class="highlight" v-html="note.highlightedBody" />
           <footer>
             <span>Updated {{ formatDate(note.updatedAt) }}</span>
-            <button type="button" aria-label="Delete note" @click="deleteNote(note)">Delete</button>
+            <div class="note-menu">
+              <button
+                class="note-menu-button"
+                type="button"
+                aria-label="Note settings"
+                aria-haspopup="menu"
+                :aria-expanded="openNoteMenu === note.id"
+                @click="openNoteMenu = openNoteMenu === note.id ? null : note.id"
+              >
+                ⋮
+              </button>
+              <div v-if="openNoteMenu === note.id" class="note-menu-panel" role="menu">
+                <button type="button" role="menuitem" @click="deleteNote(note)">Delete note</button>
+              </div>
+            </div>
           </footer>
         </article>
       </div>
