@@ -26,9 +26,6 @@ Create a `.env` file:
 GOOGLE_CLIENT_ID=your-google-oauth-client-id
 TURSO_DATABASE_URL=libsql://your-database.turso.io
 TURSO_AUTH_TOKEN=your-turso-auth-token
-
-# Optional: enable only after confirming your Turso runtime supports native FTS.
-TURSO_ENABLE_NATIVE_FTS=false
 ```
 
 Without Turso variables, local development uses `file:notes.db`.

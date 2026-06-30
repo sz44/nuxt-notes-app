@@ -6,25 +6,47 @@ export default defineEventHandler(async (event) => {
   const search = String(query.q || '').trim()
   const db = useDb()
 
-  if (search && canUseNativeFts()) {
+  if (search && canUseFts5()) {
+    const ftsQuery = toFts5Query(search)
+
     const result = await db.execute({
-      sql: `SELECT
-          id,
-          body,
-          created_at,
-          updated_at,
-          fts_score(body, ?) AS search_relevance,
-          fts_highlight(body, '<mark>', '</mark>', ?) AS highlighted_body
+      sql: `WITH fts_matches AS (
+          SELECT
+            rowid,
+            bm25(notes_fts) AS search_relevance,
+            highlight(notes_fts, 0, '<mark>', '</mark>') AS highlighted_body
+          FROM notes_fts
+          WHERE notes_fts MATCH ?
+        )
+        SELECT
+          notes.id,
+          notes.body,
+          notes.created_at,
+          notes.updated_at,
+          fts_matches.search_relevance,
+          fts_matches.highlighted_body
         FROM notes
-        WHERE user_id = ?
-          AND deleted_at IS NULL
-          AND fts_match(body, ?) = 1
-        ORDER BY created_at DESC
+        LEFT JOIN fts_matches ON fts_matches.rowid = notes.rowid
+        WHERE notes.user_id = ?
+          AND notes.deleted_at IS NULL
+          AND (
+            fts_matches.rowid IS NOT NULL
+            OR lower(notes.body) LIKE '%' || lower(?) || '%'
+          )
+        ORDER BY notes.created_at DESC
         LIMIT 50`,
-      args: [search, search, user.id, search]
+      args: [ftsQuery, user.id, search]
     })
 
-    return { notes: result.rows.map(mapNote) }
+    return {
+      notes: result.rows.map((row) => {
+        const note = mapNote(row)
+        return {
+          ...note,
+          highlightedBody: note.highlightedBody || highlightFallback(note.body, search)
+        }
+      })
+    }
   }
 
   if (search) {
@@ -70,6 +92,15 @@ function sanitizeHighlightedBody(value: string) {
   return escapeHtml(value)
     .replaceAll('&lt;mark&gt;', '<mark>')
     .replaceAll('&lt;/mark&gt;', '</mark>')
+}
+
+function toFts5Query(search: string) {
+  const terms = search.match(/[\p{L}\p{N}_]+/gu) || []
+  if (terms.length === 0) {
+    return `"${search.replaceAll('"', '""')}"`
+  }
+
+  return terms.map((term) => `"${term.replaceAll('"', '""')}"*`).join(' ')
 }
 
 function highlightFallback(body: string, search: string) {

@@ -2,7 +2,7 @@ import { createClient, type Client } from '@libsql/client'
 
 let client: Client | undefined
 let ready: Promise<void> | undefined
-let nativeFtsAvailable = false
+let fts5Available = false
 
 export function useDb() {
   if (!client) {
@@ -24,8 +24,8 @@ export async function ensureDb() {
   await ready
 }
 
-export function canUseNativeFts() {
-  return nativeFtsAvailable
+export function canUseFts5() {
+  return fts5Available
 }
 
 async function migrate() {
@@ -58,14 +58,38 @@ async function migrate() {
     'CREATE INDEX IF NOT EXISTS idx_notes_user_created ON notes(user_id, deleted_at, created_at DESC)'
   ], 'write')
 
-  const config = useRuntimeConfig()
-  if (config.enableNativeFts) {
-    try {
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_notes_fts ON notes USING fts (body)')
-      nativeFtsAvailable = true
-    } catch (error) {
-      nativeFtsAvailable = false
-      console.warn('Turso native FTS is unavailable; falling back to LIKE search.', error)
-    }
+  try {
+    await db.batch([
+      `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts
+        USING fts5(
+          body,
+          content='notes',
+          content_rowid='rowid'
+        )`,
+      `CREATE TRIGGER IF NOT EXISTS notes_ai
+        AFTER INSERT ON notes
+        BEGIN
+          INSERT INTO notes_fts(rowid, body) VALUES (new.rowid, new.body);
+        END`,
+      `CREATE TRIGGER IF NOT EXISTS notes_ad
+        AFTER DELETE ON notes
+        BEGIN
+          INSERT INTO notes_fts(notes_fts, rowid, body)
+          VALUES('delete', old.rowid, old.body);
+        END`,
+      `CREATE TRIGGER IF NOT EXISTS notes_au
+        AFTER UPDATE OF body ON notes
+        BEGIN
+          INSERT INTO notes_fts(notes_fts, rowid, body)
+          VALUES('delete', old.rowid, old.body);
+          INSERT INTO notes_fts(rowid, body) VALUES (new.rowid, new.body);
+        END`
+    ], 'write')
+
+    await db.execute("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
+    fts5Available = true
+  } catch (error) {
+    fts5Available = false
+    console.warn('FTS5 is unavailable; falling back to LIKE search.', error)
   }
 }

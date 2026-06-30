@@ -23,7 +23,7 @@ Build a small Google Keep-inspired notes app for authenticated users.
 - Nuxt 4 app deployed to Vercel.
 - Turso/libSQL database.
 - Server API routes for auth and notes.
-- Search uses TursoDB native FTS, instead of SQLite FTS5, if supported in the deployed Turso runtime.
+- Search uses libSQL/SQLite FTS5 on Turso Cloud.
 
 # Auth
 - Client obtains Google credential through Google Identity Services.
@@ -41,48 +41,92 @@ Build a small Google Keep-inspired notes app for authenticated users.
 - Search returns only current user's non-deleted notes.
 
 # Search
-Use TursoDB native FTS, backed internally by Tantivy, instead of SQLite FTS5.
+Use libSQL/SQLite FTS5 on Turso Cloud.
 
-Implementation gate: confirm the target Turso Cloud/runtime supports `USING fts`, `fts_match`, `fts_score`, and `fts_highlight` before relying on native FTS. If unavailable in the deployed environment, defer search or use a temporary fallback.
+Earlier notes assumed Turso native FTS with `CREATE INDEX ... USING fts`, `fts_match`, `fts_score`, and `fts_highlight`. Testing against Turso Cloud rejected `USING fts`, and current research indicates Turso Cloud uses libSQL with SQLite-compatible FTS5 support rather than that native FTS API.
 
-Create an FTS index over note content:
+Create an external-content FTS5 table over note body:
 
 ```sql
-CREATE INDEX idx_notes_fts
-ON notes USING fts (body);
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts
+USING fts5(
+  body,
+  content='notes',
+  content_rowid='rowid'
+);
+```
+
+Keep the FTS table synchronized with triggers:
+
+```sql
+CREATE TRIGGER IF NOT EXISTS notes_ai
+AFTER INSERT ON notes
+BEGIN
+  INSERT INTO notes_fts(rowid, body) VALUES (new.rowid, new.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS notes_ad
+AFTER DELETE ON notes
+BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, body)
+  VALUES('delete', old.rowid, old.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS notes_au
+AFTER UPDATE OF body ON notes
+BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, body)
+  VALUES('delete', old.rowid, old.body);
+  INSERT INTO notes_fts(rowid, body) VALUES (new.rowid, new.body);
+END;
 ```
 
 Search should:
 - query only the signed-in user's non-deleted notes
-- filter via `fts_match`
-- support relevance ordering via `fts_score`
+- join FTS results back to `notes` and enforce `user_id` and `deleted_at IS NULL` on `notes`
+- filter token/prefix matches via `notes_fts MATCH ?`
+- also include substring matches via `LIKE` so searches such as `ix` can find a note containing `six`
+- support relevance ordering via `bm25(notes_fts)` or FTS5 `rank`
 - fall back to `created_at DESC` when no search query is active
-- use `fts_highlight` to return highlighted note body for search results
+- use FTS5 `highlight(notes_fts, 0, '<mark>', '</mark>')` to return highlighted note body for search results
 - limit search results to 50 notes
 
 Search query shape:
 
 ```sql
 SELECT
-  id,
-  body,
-  created_at,
-  updated_at,
-  fts_score(body, ?) AS search_relevance,
-  fts_highlight(body, '<mark>', '</mark>', ?) AS highlighted_body
+  notes.id,
+  notes.body,
+  notes.created_at,
+  notes.updated_at,
+  fts_matches.search_relevance,
+  fts_matches.highlighted_body
 FROM notes
-WHERE user_id = ?
-  AND deleted_at IS NULL
-  AND fts_match(body, ?) = 1
-ORDER BY created_at DESC
+LEFT JOIN (
+  SELECT
+    rowid,
+    bm25(notes_fts) AS search_relevance,
+    highlight(notes_fts, 0, '<mark>', '</mark>') AS highlighted_body
+  FROM notes_fts
+  WHERE notes_fts MATCH ?
+) AS fts_matches ON fts_matches.rowid = notes.rowid
+WHERE notes.user_id = ?
+  AND notes.deleted_at IS NULL
+  AND (
+    fts_matches.rowid IS NOT NULL
+    OR lower(notes.body) LIKE '%' || lower(?) || '%'
+  )
+ORDER BY notes.created_at DESC
 LIMIT 50;
 ```
 
-Turso FTS notes:
-- Lower `fts_score` values indicate higher relevance.
-- Turso FTS does not support the SQLite `MATCH` operator syntax; use `fts_match()`.
-- FTS changes inside a transaction are visible to FTS queries after commit.
-- Use `OPTIMIZE INDEX idx_notes_fts` after bulk imports or if search performance degrades.
+FTS5 notes:
+- Lower `bm25(notes_fts)` values indicate higher relevance.
+- FTS5 does not match arbitrary substrings inside a token with the default tokenizer. Use `LIKE` alongside FTS5 when substring search is part of the product behavior.
+- The MVP intentionally keeps ordering stable with `created_at DESC`, even for search results, to avoid notes jumping while users edit.
+- Soft deletes do not need to remove rows from `notes_fts` as long as every search joins to `notes` and filters `deleted_at IS NULL`.
+- If a future hard-delete path is added, the delete trigger keeps `notes_fts` in sync.
+- Existing notes need a one-time backfill after creating `notes_fts`: `INSERT INTO notes_fts(rowid, body) SELECT rowid, body FROM notes;`
 
 # API
 - POST /api/auth/google: verifies Google credential and creates a session.
@@ -101,6 +145,16 @@ Turso FTS notes:
 - Deleted notes do not appear in list or search.
 - Empty search shows notes by `created_at DESC`.
 - Non-empty search shows matching notes by `created_at DESC`.
+- Non-empty search supports token, prefix, and substring matches.
+
+# FTS5 Implementation Plan
+1. Replace the native FTS migration in `server/utils/db.ts` with `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(...)`.
+2. Add insert, delete, and `body` update triggers to keep `notes_fts` synchronized.
+3. Add an idempotent backfill for existing notes. Prefer `INSERT INTO notes_fts(notes_fts) VALUES('rebuild')` for external-content FTS5 if supported; otherwise insert missing rows from `notes`.
+4. Remove `TURSO_ENABLE_NATIVE_FTS` and the native FTS feature gate from runtime config.
+5. Update `GET /api/notes?q=` to query `notes_fts MATCH ?`, join back to `notes`, and keep `ORDER BY notes.created_at DESC`.
+6. Keep the existing `LIKE` fallback only if FTS5 table creation fails, and log a clear warning.
+7. Sanitize highlighted HTML before returning it to the client, preserving only generated `<mark>` tags.
 
 # database
 ```sql
