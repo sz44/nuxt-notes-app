@@ -21,6 +21,7 @@ const composerExpanded = ref(false)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const openMenu = ref(false)
 const openNoteMenu = ref<string | null>(null)
+const theme = ref<'light' | 'dark'>('light')
 const loading = ref(true)
 const saving = ref(false)
 const errorMessage = ref('')
@@ -40,6 +41,22 @@ loading.value = false
 
 watch(search, () => {
   loadNotes()
+})
+
+onMounted(() => {
+  const savedTheme = window.localStorage.getItem('notes-theme')
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    theme.value = savedTheme
+  } else {
+    applyThemeClass(theme.value)
+  }
+})
+
+watch(theme, (nextTheme) => {
+  if (import.meta.client) {
+    window.localStorage.setItem('notes-theme', nextTheme)
+    applyThemeClass(nextTheme)
+  }
 })
 
 async function loadNotes() {
@@ -150,6 +167,14 @@ async function signOut() {
   await navigateTo('/signin')
 }
 
+function toggleTheme() {
+  theme.value = theme.value === 'light' ? 'dark' : 'light'
+}
+
+function applyThemeClass(nextTheme: 'light' | 'dark') {
+  document.documentElement.classList.toggle('theme-dark', nextTheme === 'dark')
+}
+
 function formatDate(timestamp: number) {
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',
@@ -161,7 +186,7 @@ function formatDate(timestamp: number) {
 </script>
 
 <template>
-  <main class="app-page">
+  <main class="app-page" :class="`theme-${theme}`">
     <header class="topbar">
       <div class="topbar-inner">
         <NuxtLink class="logo" to="/">Notes</NuxtLink>
@@ -169,13 +194,23 @@ function formatDate(timestamp: number) {
           <span class="search-icon">⌕</span>
           <input v-model="search" type="search" placeholder="Search" autocomplete="off">
         </label>
-        <div class="account">
-          <button class="account-button" type="button" @click="openMenu = !openMenu">
-            {{ user?.email.slice(0, 1).toUpperCase() }}
+        <div class="topbar-actions">
+          <button
+            class="theme-toggle"
+            type="button"
+            :aria-label="theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'"
+            @click="toggleTheme"
+          >
+            {{ theme === 'light' ? '☾' : '☀' }}
           </button>
-          <div v-if="openMenu" class="account-menu">
-            <p>{{ user?.email }}</p>
-            <button type="button" @click="signOut">Sign out</button>
+          <div class="account">
+            <button class="account-button" type="button" @click="openMenu = !openMenu">
+              {{ user?.email.slice(0, 1).toUpperCase() }}
+            </button>
+            <div v-if="openMenu" class="account-menu">
+              <p>{{ user?.email }}</p>
+              <button type="button" @click="signOut">Sign out</button>
+            </div>
           </div>
         </div>
       </div>
