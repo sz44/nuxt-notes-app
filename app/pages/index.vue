@@ -21,6 +21,7 @@ const composerExpanded = ref(false)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const openMenu = ref(false)
 const openNoteMenu = ref<string | null>(null)
+const expandedNotes = ref<Set<string>>(new Set())
 const theme = ref<'light' | 'dark'>('dark')
 const loading = ref(true)
 const saving = ref(false)
@@ -103,6 +104,10 @@ async function expandComposer() {
   composerTextarea.value?.focus()
 }
 
+function closeComposer() {
+  composerExpanded.value = false
+}
+
 function queueUpdate(note: Note) {
   if (editTimers.has(note.id)) {
     clearTimeout(editTimers.get(note.id))
@@ -150,6 +155,19 @@ async function updateNote(note: Note, restoreEmpty = false) {
   }
 }
 
+async function expandNote(note: Note) {
+  expandedNotes.value = new Set(expandedNotes.value).add(note.id)
+  await nextTick()
+  document.querySelector<HTMLTextAreaElement>(`[data-note-editor="${note.id}"]`)?.focus()
+}
+
+async function closeNote(note: Note) {
+  await updateNote(note, true)
+  const nextExpandedNotes = new Set(expandedNotes.value)
+  nextExpandedNotes.delete(note.id)
+  expandedNotes.value = nextExpandedNotes
+}
+
 async function deleteNote(note: Note) {
   if (editTimers.has(note.id)) {
     clearTimeout(editTimers.get(note.id))
@@ -157,6 +175,9 @@ async function deleteNote(note: Note) {
   }
 
   openNoteMenu.value = null
+  const nextExpandedNotes = new Set(expandedNotes.value)
+  nextExpandedNotes.delete(note.id)
+  expandedNotes.value = nextExpandedNotes
   await $fetch(`/api/notes/${note.id}`, { method: 'DELETE' })
   notes.value = notes.value.filter((item) => item.id !== note.id)
 }
@@ -248,37 +269,64 @@ function formatDate(timestamp: number) {
         />
         <div v-if="composerExpanded" class="composer-actions">
           <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
-          <button type="submit" :disabled="!draft.trim() || saving">
-            {{ saving ? 'Saving' : 'Done' }}
-          </button>
+          <div class="composer-buttons">
+            <button type="button" @click="closeComposer">Close</button>
+            <button type="submit" :disabled="!draft.trim() || saving">
+              {{ saving ? 'Saving' : 'Done' }}
+            </button>
+          </div>
         </div>
       </form>
 
       <div class="notes-list" aria-live="polite">
         <article v-for="note in notes" :key="note.id" class="note-row">
           <textarea
+            v-if="expandedNotes.has(note.id)"
             v-model="editing[note.id]"
-            rows="3"
+            rows="10"
             aria-label="Note body"
+            :data-note-editor="note.id"
             @input="queueUpdate(note)"
             @blur="updateNote(note, true)"
           />
+          <div
+            v-else
+            class="note-preview"
+            role="button"
+            tabindex="0"
+            aria-label="Open note for editing"
+            @click="expandNote(note)"
+            @keydown.enter.prevent="expandNote(note)"
+            @keydown.space.prevent="expandNote(note)"
+          >
+            {{ note.body }}
+          </div>
           <div v-if="search && note.highlightedBody" class="highlight" v-html="note.highlightedBody" />
           <footer>
             <span>Updated {{ formatDate(note.updatedAt) }}</span>
-            <div class="note-menu">
+            <div class="note-row-actions">
               <button
-                class="note-menu-button"
+                v-if="expandedNotes.has(note.id)"
+                class="note-close-button"
                 type="button"
-                aria-label="Note settings"
-                aria-haspopup="menu"
-                :aria-expanded="openNoteMenu === note.id"
-                @click="openNoteMenu = openNoteMenu === note.id ? null : note.id"
+                @click="closeNote(note)"
               >
-                ⋮
+                Close
               </button>
-              <div v-if="openNoteMenu === note.id" class="note-menu-panel" role="menu">
-                <button type="button" role="menuitem" @click="deleteNote(note)">Delete note</button>
+              <div class="note-menu">
+                <button
+                  class="note-menu-button"
+                  type="button"
+                  aria-label="Note settings"
+                  aria-haspopup="menu"
+                  :aria-expanded="openNoteMenu === note.id"
+                  @click="openNoteMenu = openNoteMenu === note.id ? null : note.id"
+                >
+                  ⋮
+                </button>
+                <div v-if="openNoteMenu === note.id" class="note-menu-panel" role="menu">
+                  <button type="button" role="menuitem" @click="deleteNote(note)">Delete note</button>
+                </div>
               </div>
             </div>
           </footer>
