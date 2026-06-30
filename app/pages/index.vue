@@ -50,6 +50,11 @@ onMounted(() => {
     theme.value = savedTheme
   }
   applyThemeClass(theme.value)
+  document.addEventListener('pointerdown', closeExpandedNotesOnClickAway)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeExpandedNotesOnClickAway)
 })
 
 watch(theme, (nextTheme) => {
@@ -161,11 +166,29 @@ async function expandNote(note: Note) {
   document.querySelector<HTMLTextAreaElement>(`[data-note-editor="${note.id}"]`)?.focus()
 }
 
-async function closeNote(note: Note) {
-  await updateNote(note, true)
-  const nextExpandedNotes = new Set(expandedNotes.value)
-  nextExpandedNotes.delete(note.id)
-  expandedNotes.value = nextExpandedNotes
+function closeExpandedNotesOnClickAway(event: PointerEvent) {
+  const target = event.target as Element | null
+
+  if (composerExpanded.value && !target?.closest('.composer')) {
+    closeComposer()
+  }
+
+  if (expandedNotes.value.size === 0) {
+    return
+  }
+
+  const noteCard = target?.closest<HTMLElement>('[data-note-card]')
+  if (noteCard?.dataset.noteCard && expandedNotes.value.has(noteCard.dataset.noteCard)) {
+    return
+  }
+
+  for (const note of notes.value) {
+    if (expandedNotes.value.has(note.id)) {
+      updateNote(note, true)
+    }
+  }
+
+  expandedNotes.value = new Set()
 }
 
 async function deleteNote(note: Note) {
@@ -270,7 +293,6 @@ function formatDate(timestamp: number) {
         <div v-if="composerExpanded" class="composer-actions">
           <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
           <div class="composer-buttons">
-            <button type="button" @click="closeComposer">Close</button>
             <button type="submit" :disabled="!draft.trim() || saving">
               {{ saving ? 'Saving' : 'Done' }}
             </button>
@@ -279,7 +301,7 @@ function formatDate(timestamp: number) {
       </form>
 
       <div class="notes-list" aria-live="polite">
-        <article v-for="note in notes" :key="note.id" class="note-row">
+        <article v-for="note in notes" :key="note.id" class="note-row" :data-note-card="note.id">
           <textarea
             v-if="expandedNotes.has(note.id)"
             v-model="editing[note.id]"
@@ -305,14 +327,6 @@ function formatDate(timestamp: number) {
           <footer>
             <span>Updated {{ formatDate(note.updatedAt) }}</span>
             <div class="note-row-actions">
-              <button
-                v-if="expandedNotes.has(note.id)"
-                class="note-close-button"
-                type="button"
-                @click="closeNote(note)"
-              >
-                Close
-              </button>
               <div class="note-menu">
                 <button
                   class="note-menu-button"

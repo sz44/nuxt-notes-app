@@ -371,16 +371,6 @@ mark {
   gap: 8px;
 }
 
-.note-close-button {
-  min-height: 34px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-text);
-  padding: 0 12px;
-  font-weight: 600;
-}
-
 .note-menu {
   position: relative;
 }
